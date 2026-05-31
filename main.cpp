@@ -8,21 +8,35 @@
 
 // Configuración de dimensiones
 const int SCREEN_W = 900;
-const int GAME_H = 600;      
-const int HUD_H = 600;       
+const int GAME_H = 600;
+const int HUD_H = 600;
 const int SCREEN_H = 660; // 60 píxeles extra para la barra de datos inferior
-const int CELL_SIZE = 7;
-const int COLS = SCREEN_W / CELL_SIZE;
-const int ROWS = GAME_H / CELL_SIZE;
+const int MIN_CELL_SIZE = 3;
+const int MAX_CELL_SIZE = 20;
+int cellSize = 7;
+int COLS = SCREEN_W / cellSize;
+int ROWS = GAME_H / cellSize;
+const int MAX_ROWS = GAME_H / MIN_CELL_SIZE;
+const int MAX_COLS = SCREEN_W / MIN_CELL_SIZE;
 
 // Máquina de estados
 enum EstadoSistema { MENU, JUEGO };
 EstadoSistema estado_actual = MENU;
 
 // Matrices del Juego de la Vida
-bool cells[ROWS][COLS];
-bool next_cells[ROWS][COLS];
+bool cells[MAX_ROWS][MAX_COLS];
+bool next_cells[MAX_ROWS][MAX_COLS];
 int generaciones = 0;
+const int MAX_SAVE_FILES = 10;
+char saveFiles[MAX_SAVE_FILES][64];
+int saveFileCount = 0;
+char lastMessage[128] = "";
+
+// Actualiza filas y columnas en función del tamaño de celda
+void updateGridDimensions() {
+    ROWS = GAME_H / cellSize;
+    COLS = SCREEN_W / cellSize;
+}
 
 // Cuenta los vecinos alrededor de una celda específica
 int countNeighbors(int row, int col) {
@@ -85,16 +99,130 @@ void inicializarTablero(bool aleatorio) {
     }
 }
 
+bool cargarListaGuardados() {
+    saveFileCount = 0;
+    FILE* arch = fopen("saved_maps_list.txt", "r");
+    if (!arch) {
+        return false;
+    }
+
+    while (saveFileCount < MAX_SAVE_FILES && fscanf(arch, "%63s", saveFiles[saveFileCount]) == 1) {
+        saveFileCount++;
+    }
+    fclose(arch);
+    return true;
+}
+
+bool guardarPatronActual() {
+    if (saveFileCount >= MAX_SAVE_FILES) {
+        std::snprintf(lastMessage, sizeof(lastMessage), "Limite de archivos guardados alcanzado.");
+        return false;
+    }
+
+    char fileName[64];
+    std::snprintf(fileName, sizeof(fileName), "guardado_%02d.txt", saveFileCount + 1);
+
+    FILE* arch = fopen(fileName, "a");
+    if (!arch) {
+        std::snprintf(lastMessage, sizeof(lastMessage), "Error al abrir %s para guardar.", fileName);
+        return false;
+    }
+
+    fprintf(arch, "%d %d %d\n", cellSize, ROWS, COLS);
+    for (int row = 0; row < ROWS; row++) {
+        for (int col = 0; col < COLS; col++) {
+            fprintf(arch, "%d", cells[row][col] ? 1 : 0);
+        }
+        fprintf(arch, "\n");
+    }
+    fclose(arch);
+
+    FILE* lista = fopen("saved_maps_list.txt", "a");
+    if (lista) {
+        fprintf(lista, "%s\n", fileName);
+        fclose(lista);
+    }
+
+    std::snprintf(saveFiles[saveFileCount], sizeof(saveFiles[saveFileCount]), "%s", fileName);
+    saveFileCount++;
+    std::snprintf(lastMessage, sizeof(lastMessage), "Guardado en %s", fileName);
+    return true;
+}
+
+bool cargarPatron(const char* fileName) {
+    FILE* arch = fopen(fileName, "r");
+    if (!arch) {
+        std::snprintf(lastMessage, sizeof(lastMessage), "No se pudo abrir %s.", fileName);
+        return false;
+    }
+
+    int savedSize = 0;
+    int savedRows = 0;
+    int savedCols = 0;
+    if (fscanf(arch, "%d %d %d", &savedSize, &savedRows, &savedCols) != 3) {
+        fclose(arch);
+        std::snprintf(lastMessage, sizeof(lastMessage), "Formato incorrecto en %s.", fileName);
+        return false;
+    }
+
+    cellSize = savedSize;
+    updateGridDimensions();
+
+    for (int row = 0; row < ROWS; row++) {
+        for (int col = 0; col < COLS; col++) {
+            cells[row][col] = false;
+        }
+    }
+
+    for (int row = 0; row < savedRows && row < ROWS; row++) {
+        for (int col = 0; col < savedCols && col < COLS; col++) {
+            int valor = 0;
+            if (fscanf(arch, "%1d", &valor) != 1) {
+                valor = 0;
+            }
+            cells[row][col] = (valor == 1);
+        }
+        // Saltar cualquier carácter restante en la línea
+        int ch;
+        while ((ch = fgetc(arch)) != EOF && ch != '\n');
+    }
+    fclose(arch);
+    generaciones = 0;
+    std::snprintf(lastMessage, sizeof(lastMessage), "Cargado %s", fileName);
+    return true;
+}
+
 // Dibujado del menú principal
 void drawMenu(ALLEGRO_FONT* font) {
     al_clear_to_color(al_map_rgb(20, 20, 25));
     
-    al_draw_text(font, al_map_rgb(0, 220, 0), SCREEN_W / 2, 150, ALLEGRO_ALIGN_CENTER, "CONWAY'S GAME OF LIFE");
+    al_draw_text(font, al_map_rgb(0, 220, 0), SCREEN_W / 2, 120, ALLEGRO_ALIGN_CENTER, "CONWAY'S GAME OF LIFE");
     
-    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 280, ALLEGRO_ALIGN_CENTER, "Presiona [ V ] para Mapa VACIO");
-    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 340, ALLEGRO_ALIGN_CENTER, "Presiona [ A ] para Mapa ALEATORIO");
+    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 200, ALLEGRO_ALIGN_CENTER, "Presiona [ V ] para Mapa VACIO");
+    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 240, ALLEGRO_ALIGN_CENTER, "Presiona [ A ] para Mapa ALEATORIO");
+    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 280, ALLEGRO_ALIGN_CENTER, "Presiona [ L ] para Cargar mapa guardado");
+    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 320, ALLEGRO_ALIGN_CENTER, "Presiona + / - o Flechas ARRIBA/ABAJO para cambiar el zoom");
     
-    al_draw_text(font, al_map_rgb(120, 120, 120), SCREEN_W / 2, 500, ALLEGRO_ALIGN_CENTER, "Presiona ESC para salir");
+    char texto_zoom[60];
+    std::snprintf(texto_zoom, sizeof(texto_zoom), "Tamaño de celda: %d px  (Columnas: %d, Filas: %d)", cellSize, COLS, ROWS);
+    al_draw_text(font, al_map_rgb(180, 180, 180), SCREEN_W / 2, 360, ALLEGRO_ALIGN_CENTER, texto_zoom);
+    
+    al_draw_text(font, al_map_rgb(120, 120, 120), SCREEN_W / 2, 520, ALLEGRO_ALIGN_CENTER, "Presiona ESC para salir");
+}
+
+void drawLoadMenu(ALLEGRO_FONT* font) {
+    al_clear_to_color(al_map_rgb(20, 20, 25));
+    al_draw_text(font, al_map_rgb(0, 220, 0), SCREEN_W / 2, 100, ALLEGRO_ALIGN_CENTER, "CARGAR MAPA GUARDADO");
+    if (saveFileCount == 0) {
+        al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 240, ALLEGRO_ALIGN_CENTER, "No hay archivos guardados.");
+    } else {
+        for (int i = 0; i < saveFileCount; i++) {
+            char line[128];
+            std::snprintf(line, sizeof(line), "%d) %s", i + 1, saveFiles[i]);
+            al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 220 + i * 30, ALLEGRO_ALIGN_CENTER, line);
+        }
+    }
+    al_draw_text(font, al_map_rgb(180, 180, 180), SCREEN_W / 2, 520, ALLEGRO_ALIGN_CENTER, "Presiona B para volver al menu principal");
 }
 
 // Dibujado de la cuadrícula, simulación e interfaz inferior
@@ -104,12 +232,12 @@ void drawGrid(ALLEGRO_FONT* font, bool pausa) {
     // Dibujar células y líneas divisorias
     for (int row = 0; row < ROWS; row++) {
         for (int col = 0; col < COLS; col++) {
-            int x1 = col * CELL_SIZE;
-            int y1 = row * CELL_SIZE;
+            int x1 = col * cellSize;
+            int y1 = row * cellSize;
             if (cells[row][col]) {
-                al_draw_filled_rectangle(x1 + 1, y1 + 1, x1 + CELL_SIZE - 1, y1 + CELL_SIZE - 1, al_map_rgb(0, 200, 0));
+                al_draw_filled_rectangle(x1 + 1, y1 + 1, x1 + cellSize - 1, y1 + cellSize - 1, al_map_rgb(0, 200, 0));
             }
-            al_draw_rectangle(x1, y1, x1 + CELL_SIZE, y1 + CELL_SIZE, al_map_rgb(45, 45, 45), 1);
+            al_draw_rectangle(x1, y1, x1 + cellSize, y1 + cellSize, al_map_rgb(45, 45, 45), 1);
         }
     }
 
@@ -221,6 +349,29 @@ int main() {
                 }
             }
         }
+        else if (event.type == ALLEGRO_EVENT_KEY_DOWN) {
+            if (estado_actual == MENU) {
+                if ((event.keyboard.keycode == ALLEGRO_KEY_PAD_PLUS || event.keyboard.keycode == ALLEGRO_KEY_EQUALS)
+                    && cellSize < MAX_CELL_SIZE) {
+                    cellSize++;
+                    updateGridDimensions();
+                    redraw = true;
+                } else if ((event.keyboard.keycode == ALLEGRO_KEY_MINUS || event.keyboard.keycode == ALLEGRO_KEY_PAD_MINUS)
+                    && cellSize > MIN_CELL_SIZE) {
+                    cellSize--;
+                    updateGridDimensions();
+                    redraw = true;
+                } else if (event.keyboard.keycode == ALLEGRO_KEY_UP && cellSize < MAX_CELL_SIZE) {
+                    cellSize++;
+                    updateGridDimensions();
+                    redraw = true;
+                } else if (event.keyboard.keycode == ALLEGRO_KEY_DOWN && cellSize > MIN_CELL_SIZE) {
+                    cellSize--;
+                    updateGridDimensions();
+                    redraw = true;
+                }
+            }
+        }
         
         // Ticks de reloj independientes de la velocidad de refresco del monitor
         else if (event.type == ALLEGRO_EVENT_TIMER) {
@@ -245,8 +396,8 @@ int main() {
                         running = false; 
                     }
                     else {
-                        int col = mx / CELL_SIZE;
-                        int row = my / CELL_SIZE;
+                        int col = mx / cellSize;
+                        int row = my / cellSize;
 
                         if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
                             cells[row][col] = true;
@@ -264,8 +415,8 @@ int main() {
                 al_get_mouse_state(&mouse_state);
 
                 if (mouse_state.buttons & 1) { 
-                    int col = mouse_state.x / CELL_SIZE;
-                    int row = mouse_state.y / CELL_SIZE;
+                    int col = mouse_state.x / cellSize;
+                    int row = mouse_state.y / cellSize;
 
                     if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
                         cells[row][col] = true;
