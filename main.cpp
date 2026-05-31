@@ -20,7 +20,7 @@ const int MAX_ROWS = GAME_H / MIN_CELL_SIZE;
 const int MAX_COLS = SCREEN_W / MIN_CELL_SIZE;
 
 // Máquina de estados
-enum EstadoSistema { MENU, JUEGO };
+enum EstadoSistema { MENU, JUEGO, CARGAR };
 EstadoSistema estado_actual = MENU;
 
 // Matrices del Juego de la Vida
@@ -258,11 +258,20 @@ void drawGrid(ALLEGRO_FONT* font, bool pausa) {
     // Indicador dinámico de estado
     if (pausa) {
         al_draw_text(font, al_map_rgb(230, 50, 50), 410, HUD_H + 20, ALLEGRO_ALIGN_LEFT, "[ PAUSA - Espacio/Enter ]");
+        al_draw_text(font, al_map_rgb(200, 200, 50), 410, HUD_H + 40, ALLEGRO_ALIGN_LEFT, "Presiona [ S ] para guardar el patron");
     } else {
         al_draw_text(font, al_map_rgb(50, 200, 50), 410, HUD_H + 20, ALLEGRO_ALIGN_LEFT, "[ CORRIENDO ]");
     }
 
-    // Botón físico interactivo para Salir
+    if (lastMessage[0] != '\0') {
+        al_draw_text(font, al_map_rgb(180, 180, 180), 20, HUD_H + 45, ALLEGRO_ALIGN_LEFT, lastMessage);
+    }
+
+    // Botones físicos interactivos
+    al_draw_filled_rectangle(520, HUD_H + 15, 640, HUD_H + 45, al_map_rgb(40, 90, 170));
+    al_draw_rectangle(520, HUD_H + 15, 640, HUD_H + 45, al_map_rgb(80, 160, 240), 2);
+    al_draw_text(font, al_map_rgb(255, 255, 255), 580, HUD_H + 23, ALLEGRO_ALIGN_CENTER, "Menu (C)");
+
     al_draw_filled_rectangle(660, HUD_H + 15, 780, HUD_H + 45, al_map_rgb(120, 20, 20));
     al_draw_rectangle(660, HUD_H + 15, 780, HUD_H + 45, al_map_rgb(230, 50, 50), 2);
     al_draw_text(font, al_map_rgb(255, 255, 255), 720, HUD_H + 23, ALLEGRO_ALIGN_CENTER, "Salir (ESC)");
@@ -303,6 +312,7 @@ int main() {
     al_register_event_source(queue, al_get_keyboard_event_source());
 
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    cargarListaGuardados();
 
     al_start_timer(timer);
     bool running = true;
@@ -338,14 +348,38 @@ int main() {
                     estado_actual = JUEGO;
                     redraw = true;
                 }
+                else if (tecla == 'l' || tecla == 'L') {
+                    cargarListaGuardados();
+                    estado_actual = CARGAR;
+                    redraw = true;
+                }
             } 
             else if (estado_actual == JUEGO) {
                 if (event.keyboard.keycode == ALLEGRO_KEY_SPACE || event.keyboard.keycode == ALLEGRO_KEY_ENTER) {
                     pausa = !pausa;
                 }
+                else if ((event.keyboard.keycode == ALLEGRO_KEY_S) && pausa) {
+                    guardarPatronActual();
+                    redraw = true;
+                }
                 else if (event.keyboard.keycode == ALLEGRO_KEY_C) {
                     estado_actual = MENU; // Detiene la partida actual y regresa a la pantalla de opciones
                     redraw = true;
+                }
+            }
+            else if (estado_actual == CARGAR) {
+                char tecla = static_cast<char>(event.keyboard.unichar);
+                if (tecla == 'b' || tecla == 'B') {
+                    estado_actual = MENU;
+                    redraw = true;
+                } else if (tecla >= '1' && tecla <= '9') {
+                    int index = tecla - '1';
+                    if (index < saveFileCount) {
+                        cargarPatron(saveFiles[index]);
+                        pausa = true;
+                        estado_actual = JUEGO;
+                        redraw = true;
+                    }
                 }
             }
         }
@@ -391,8 +425,12 @@ int main() {
                     int mx = mouse_state.x;
                     int my = mouse_state.y;
 
-                    // Evaluar colisión con la hitbox del botón Salir
-                    if (mx >= 660 && mx <= 780 && my >= (HUD_H + 15) && my <= (HUD_H + 45)) {
+                    // Evaluar colisión con los botones del HUD
+                    if (mx >= 520 && mx <= 640 && my >= (HUD_H + 15) && my <= (HUD_H + 45)) {
+                        estado_actual = MENU;
+                        redraw = true;
+                    }
+                    else if (mx >= 660 && mx <= 780 && my >= (HUD_H + 15) && my <= (HUD_H + 45)) {
                         running = false; 
                     }
                     else {
@@ -430,6 +468,8 @@ int main() {
         if (redraw && al_is_event_queue_empty(queue)) {
             if (estado_actual == MENU) {
                 drawMenu(font);
+            } else if (estado_actual == CARGAR) {
+                drawLoadMenu(font);
             } else if (estado_actual == JUEGO) {
                 drawGrid(font, pausa);
             }
