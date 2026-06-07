@@ -1,10 +1,10 @@
-﻿#include <allegro5/allegro.h>
+﻿#include <allegro5/allegro.h> 
 #include <allegro5/allegro_primitives.h>
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
-#include <cstdlib>
+#include <cstdlib> 
 #include <ctime>
-#include "game.h"
+#include "game.h" //funciones definidas
 
 int main() {
     if (!al_init()) return -1;
