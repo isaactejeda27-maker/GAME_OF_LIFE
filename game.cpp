@@ -1,241 +1,370 @@
 #include "game.h"
+
 #include <allegro5/allegro_primitives.h>
-#include <allegro5/allegro_ttf.h>
+
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 
-int cellSize = 7;
-int COLS = SCREEN_W / cellSize;
-int ROWS = GAME_H / cellSize;
-EstadoSistema estado_actual = MENU;
+using namespace std;
 
-bool cells[MAX_ROWS][MAX_COLS];
-bool next_cells[MAX_ROWS][MAX_COLS];
-int generaciones = 0;
-char saveFiles[MAX_SAVE_FILES][64];
-int saveFileCount = 0;
-char lastMessage[128] = "";
+Tablero tablero = {
+    7,        
+    0, 0, 0,
+    NULL, NULL
+};
 
-void updateGridDimensions() {
-    ROWS = GAME_H / cellSize;
-    COLS = SCREEN_W / cellSize;
+ModoJuego estado = MENU;
+
+char listaGuardados[MAX_GUARDADOS][64];
+int cantGuardados = 0;
+char mensaje[128] = "";
+
+//inicializa el tablero, libera el anterior si existia
+bool inicializarTablero(int tamCel) {
+    if (tamCel < CEL_MIN || tamCel > CEL_MAX) {
+        snprintf(mensaje, sizeof(mensaje), "Tamano de celda fuera de rango.");
+        return false;
+    }
+
+    int filas = ALTO_JUEGO / tamCel;
+    int cols = ANCHO / tamCel;
+    int total = filas * cols;
+
+    //pedimos memoria para el estado actual y el siguiente
+    unsigned char* cel = (unsigned char*) malloc(total);
+    unsigned char* sig = (unsigned char*) malloc(total);
+
+    //si falla la reserva, soltamos lo que hayamos conseguido
+    if (!cel || !sig) {
+        free(cel);
+        free(sig);
+        snprintf(mensaje, sizeof(mensaje), "No se pudo reservar memoria.");
+        return false;
+    }
+
+    memset(cel, 0, total);
+    memset(sig, 0, total);
+
+    free(tablero.celulas);
+    free(tablero.siguiente);
+
+    tablero.tamCel = tamCel;
+    tablero.filas = filas;
+    tablero.cols = cols;
+    tablero.gen = 0;
+    tablero.celulas = cel;
+    tablero.siguiente = sig;
+
+    return true;
 }
 
-int countNeighbors(int row, int col) {
-    int count = 0;
+//libera la memoria del tablero
+void liberarTablero() {
+    free(tablero.celulas);
+    free(tablero.siguiente);
+    tablero.celulas = NULL;
+    tablero.siguiente = NULL;
+}
+
+//pone todas las celulas a 0 y reinicia generacion
+void vaciarTablero() {
+    int total = tablero.filas * tablero.cols;
+    for (int i = 0; i < total; i++) {
+        tablero.celulas[i] = 0;
+        tablero.siguiente[i] = 0;
+    }
+    tablero.gen = 0;
+    snprintf(mensaje, sizeof(mensaje), "Mapa vaciado.");
+}
+
+//deja el tablero listo, vacio o con celdas al azar
+void prepararTablero(bool azar) {
+    vaciarTablero();
+
+    if (azar) {
+        int total = tablero.filas * tablero.cols;
+        for (int i = 0; i < total; i++) {
+            //20% de probabilidad de empezar viva
+            tablero.celulas[i] = (rand() % 5 == 0);
+        }
+        snprintf(mensaje, sizeof(mensaje), "Mapa aleatorio creado.");
+    } else {
+        snprintf(mensaje, sizeof(mensaje), "Mapa vacio creado.");
+    }
+}
+
+// cuenta los vecinos vivos de una posicion (f,c)
+int vecinosVivos(int f, int c) {
+    int total = 0;
+    //miramos cada celda a su alrdedor
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             if (x == 0 && y == 0) continue;
-            int ny = row + y;
-            int nx = col + x;
-            if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) {
-                count += cells[ny][nx];
+
+            int nf = f + y;
+            int nc = c + x;
+
+            //que no se salga del mapa
+            if (nf >= 0 && nf < tablero.filas && nc >= 0 && nc < tablero.cols) {
+                total += tablero.celulas[pos(nf, nc)];
             }
         }
     }
-    return count;
+    return total;
 }
 
-int contarCelulasVivas() {
+//devuelve la cantidad de celulas vivas en total
+int totalVivas() {
     int vivas = 0;
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            if (cells[row][col]) vivas++;
-        }
+    int total = tablero.filas * tablero.cols;
+    for (int i = 0; i < total; i++) {
+        vivas += tablero.celulas[i];
     }
     return vivas;
 }
 
-void updateGame() {
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            int neighbors = countNeighbors(row, col);
-            if (cells[row][col]) {
-                next_cells[row][col] = (neighbors == 2 || neighbors == 3);
+//aplica las reglas del juego de la vida
+void actualizar() {
+    for (int f = 0; f < tablero.filas; f++) {
+        for (int c = 0; c < tablero.cols; c++) {
+            int i = pos(f, c);
+            int vec = vecinosVivos(f, c);
+
+            if (tablero.celulas[i]) {
+                tablero.siguiente[i] = (vec == 2 || vec == 3);
             } else {
-                next_cells[row][col] = (neighbors == 3);
+                tablero.siguiente[i] = (vec == 3);
             }
         }
     }
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            cells[row][col] = next_cells[row][col];
-        }
-    }
-    generaciones++;
+
+    //Investigando, vimos que en vez de copiar el contenido de un arreglo al siguiente
+    //es mas rapido intercabiar los punteros y cosume menos memoria
+    unsigned char* aux = tablero.celulas;
+    tablero.celulas = tablero.siguiente;
+    tablero.siguiente = aux;
+
+    tablero.gen++;
 }
 
-void inicializarTablero(bool aleatorio) {
-    generaciones = 0;
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            if (aleatorio) {
-                cells[row][col] = (std::rand() % 5 == 0);
-            } else {
-                cells[row][col] = false;
-            }
-        }
-    }
-}
-
-void limpiarTablero() {
-    generaciones = 0;
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            cells[row][col] = false;
-        }
-    }
-    std::snprintf(lastMessage, sizeof(lastMessage), "Mapa vaciado.");
-}
-
+//lee la lista de archivos guardados que tenemos
 bool cargarListaGuardados() {
-    saveFileCount = 0;
+    cantGuardados = 0;
     FILE* arch = fopen("saved_maps_list.txt", "r");
     if (!arch) {
         return false;
     }
-    while (saveFileCount < MAX_SAVE_FILES && fscanf(arch, "%63s", saveFiles[saveFileCount]) == 1) {
-        saveFileCount++;
+
+    while (cantGuardados < MAX_GUARDADOS &&
+           fscanf(arch, "%63s", listaGuardados[cantGuardados]) == 1) {
+        cantGuardados++;
     }
     fclose(arch);
     return true;
 }
 
-bool guardarPatronActual() {
-    if (saveFileCount >= MAX_SAVE_FILES) {
-        std::snprintf(lastMessage, sizeof(lastMessage), "Limite de archivos guardados alcanzado.");
+//guarda el mapa actual en un archivo nuevo
+bool guardarMapaActual() {
+    if (cantGuardados >= MAX_GUARDADOS) {
+        snprintf(mensaje, sizeof(mensaje), "Limite de guardados alcanzado.");
         return false;
     }
-    char fileName[64];
-    std::snprintf(fileName, sizeof(fileName), "guardado_%02d.txt", saveFileCount + 1);
 
-    FILE* arch = fopen(fileName, "w");
+    char nombre[64];
+    snprintf(nombre, sizeof(nombre), "guardado_%02d.txt", cantGuardados + 1);
+
+    FILE* arch = fopen(nombre, "w");
     if (!arch) {
-        std::snprintf(lastMessage, sizeof(lastMessage), "Error al abrir %s para guardar.", fileName);
+        snprintf(mensaje, sizeof(mensaje), "Error al guardar.");
         return false;
     }
 
-    fprintf(arch, "%d %d %d\n", cellSize, ROWS, COLS);
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            fprintf(arch, "%d", cells[row][col] ? 1 : 0);
+    //guardamos tamCel, filas, cols
+    fprintf(arch, "%d %d %d\n", tablero.tamCel, tablero.filas, tablero.cols);
+
+    //guardamos las celdas como 0 y 1
+    for (int f = 0; f < tablero.filas; f++) {
+        for (int c = 0; c < tablero.cols; c++) {
+            fprintf(arch, "%d", tablero.celulas[pos(f, c)] ? 1 : 0);
         }
         fprintf(arch, "\n");
     }
     fclose(arch);
 
+    //agregamos el nombre a la lista de guardados
     FILE* lista = fopen("saved_maps_list.txt", "a");
     if (lista) {
-        fprintf(lista, "%s\n", fileName);
+        fprintf(lista, "%s\n", nombre);
         fclose(lista);
     }
 
-    std::snprintf(saveFiles[saveFileCount], sizeof(saveFiles[saveFileCount]), "%s", fileName);
-    saveFileCount++;
-    std::snprintf(lastMessage, sizeof(lastMessage), "Guardado en %s", fileName);
+    snprintf(listaGuardados[cantGuardados], sizeof(listaGuardados[cantGuardados]), "%s", nombre);
+    cantGuardados++;
+    snprintf(mensaje, sizeof(mensaje), "Guardado en %s", nombre);
     return true;
 }
 
-bool cargarPatron(const char* fileName) {
-    FILE* arch = fopen(fileName, "r");
+//carga un mapa desde un archivo
+bool cargarMapa(const char* nombre) {
+    FILE* arch = fopen(nombre, "r");
     if (!arch) {
-        std::snprintf(lastMessage, sizeof(lastMessage), "No se pudo abrir %s.", fileName);
+        snprintf(mensaje, sizeof(mensaje), "No se pudo abrir %s.", nombre);
         return false;
     }
-    int savedSize = 0;
-    int savedRows = 0;
-    int savedCols = 0;
-    if (fscanf(arch, "%d %d %d", &savedSize, &savedRows, &savedCols) != 3) {
+
+    int tam, filas, cols;
+    //leemos tamCel, filas, cols
+    if (fscanf(arch, "%d %d %d", &tam, &filas, &cols) != 3) {
         fclose(arch);
-        std::snprintf(lastMessage, sizeof(lastMessage), "Formato incorrecto en %s.", fileName);
+        snprintf(mensaje, sizeof(mensaje), "Archivo invalido.");
         return false;
     }
-    cellSize = savedSize;
-    updateGridDimensions();
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            cells[row][col] = false;
-        }
+
+    if (!inicializarTablero(tam)) {
+        fclose(arch);
+        return false;
     }
-    for (int row = 0; row < savedRows && row < ROWS; row++) {
-        for (int col = 0; col < savedCols && col < COLS; col++) {
+
+    for (int f = 0; f < filas; f++) {
+        for (int c = 0; c < cols; c++) {
             int valor = 0;
-            if (fscanf(arch, "%1d", &valor) != 1) {
-                valor = 0;
+            fscanf(arch, " %1d", &valor);
+            if (f < tablero.filas && c < tablero.cols) {
+                tablero.celulas[pos(f, c)] = valor;
             }
-            cells[row][col] = (valor == 1);
         }
-        int ch;
-        while ((ch = fgetc(arch)) != EOF && ch != '\n');
     }
     fclose(arch);
-    generaciones = 0;
-    std::snprintf(lastMessage, sizeof(lastMessage), "Cargado %s", fileName);
+    tablero.gen = 0;
+    snprintf(mensaje, sizeof(mensaje), "Cargado %s", nombre);
     return true;
 }
 
-void drawMenu(ALLEGRO_FONT* font) {
+//pantalla del menu principal
+void dibujarMenu(ALLEGRO_FONT* fuente) {
     al_clear_to_color(al_map_rgb(20, 20, 25));
-    al_draw_text(font, al_map_rgb(0, 220, 0), SCREEN_W / 2, 120, ALLEGRO_ALIGN_CENTER, "CONWAY'S GAME OF LIFE");
-    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 200, ALLEGRO_ALIGN_CENTER, "Presiona [ V ] para Mapa VACIO");
-    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 240, ALLEGRO_ALIGN_CENTER, "Presiona [ A ] para Mapa ALEATORIO");
-    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 280, ALLEGRO_ALIGN_CENTER, "Presiona [ L ] para Cargar mapa guardado");
-    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 320, ALLEGRO_ALIGN_CENTER, "Presiona + / - o Flechas ARRIBA/ABAJO para cambiar el zoom");
-    char texto_zoom[60];
-    std::snprintf(texto_zoom, sizeof(texto_zoom), "Tamaño de celda: %d px  (Columnas: %d, Filas: %d)", cellSize, COLS, ROWS);
-    al_draw_text(font, al_map_rgb(180, 180, 180), SCREEN_W / 2, 360, ALLEGRO_ALIGN_CENTER, texto_zoom);
-    al_draw_text(font, al_map_rgb(120, 120, 120), SCREEN_W / 2, 520, ALLEGRO_ALIGN_CENTER, "Presiona ESC para salir");
+
+    al_draw_text(fuente, al_map_rgb(0, 220, 0), ANCHO / 2, 120,
+                 ALLEGRO_ALIGN_CENTER, "JUEGO DE LA VIDA DE CONWAY");
+
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), ANCHO / 2, 200,
+                 ALLEGRO_ALIGN_CENTER, "[ V ] Mapa vacio");
+
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), ANCHO / 2, 240,
+                 ALLEGRO_ALIGN_CENTER, "[ A ] Mapa aleatorio");
+
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), ANCHO / 2, 280,
+                 ALLEGRO_ALIGN_CENTER, "[ L ] Cargar mapa guardado");
+
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), ANCHO / 2, 320,
+                 ALLEGRO_ALIGN_CENTER, "+ / - o flechas para cambiar zoom");
+
+    char texto[100];
+    snprintf(texto, sizeof(texto),
+                  "Celda: %d px | Columnas: %d | Filas: %d",
+                  tablero.tamCel, tablero.cols, tablero.filas);
+
+    al_draw_text(fuente, al_map_rgb(180, 180, 180), ANCHO / 2, 360,
+                 ALLEGRO_ALIGN_CENTER, texto);
+
+    al_draw_text(fuente, al_map_rgb(120, 120, 120), ANCHO / 2, 520,
+                 ALLEGRO_ALIGN_CENTER, "ESC para salir");
 }
 
-void drawLoadMenu(ALLEGRO_FONT* font) {
+//menu de carga de mapas guardados
+void dibujarCarga(ALLEGRO_FONT* fuente) {
     al_clear_to_color(al_map_rgb(20, 20, 25));
-    al_draw_text(font, al_map_rgb(0, 220, 0), SCREEN_W / 2, 100, ALLEGRO_ALIGN_CENTER, "CARGAR MAPA GUARDADO");
-    if (saveFileCount == 0) {
-        al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 240, ALLEGRO_ALIGN_CENTER, "No hay archivos guardados.");
+
+    al_draw_text(fuente, al_map_rgb(0, 220, 0), ANCHO / 2, 100,
+                 ALLEGRO_ALIGN_CENTER, "CARGAR MAPA");
+
+    if (cantGuardados == 0) {
+        al_draw_text(fuente, al_map_rgb(255, 255, 255), ANCHO / 2, 240,
+                     ALLEGRO_ALIGN_CENTER, "No hay archivos guardados.");
     } else {
-        for (int i = 0; i < saveFileCount; i++) {
-            char line[128];
-            std::snprintf(line, sizeof(line), "%d) %s", i + 1, saveFiles[i]);
-            al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_W / 2, 220 + i * 30, ALLEGRO_ALIGN_CENTER, line);
+        for (int i = 0; i < cantGuardados; i++) {
+            char texto[100];
+            snprintf(texto, sizeof(texto), "%d) %s", i + 1, listaGuardados[i]);
+            al_draw_text(fuente, al_map_rgb(255, 255, 255), ANCHO / 2, 220 + i * 30,
+                         ALLEGRO_ALIGN_CENTER, texto);
         }
     }
-    al_draw_text(font, al_map_rgb(180, 180, 180), SCREEN_W / 2, 520, ALLEGRO_ALIGN_CENTER, "Presiona B para volver al menu principal");
+
+    al_draw_text(fuente, al_map_rgb(180, 180, 180), ANCHO / 2, 520,
+                 ALLEGRO_ALIGN_CENTER, "[ B ] Volver al menu");
 }
 
-void drawGrid(ALLEGRO_FONT* font, bool pausa) {
+//renderiza el tablero del juego y muestra todos los datos
+void dibujarTablero(ALLEGRO_FONT* fuente, bool pausa) {
     al_clear_to_color(al_map_rgb(0, 0, 0));
-    for (int row = 0; row < ROWS; row++) {
-        for (int col = 0; col < COLS; col++) {
-            int x1 = col * cellSize;
-            int y1 = row * cellSize;
-            if (cells[row][col]) {
-                al_draw_filled_rectangle(x1 + 1, y1 + 1, x1 + cellSize - 1, y1 + cellSize - 1, al_map_rgb(0, 200, 0));
+
+    //dibuja las celdas vivas
+    for (int f = 0; f < tablero.filas; f++) {
+        for (int c = 0; c < tablero.cols; c++) {
+            int x = c * tablero.tamCel;
+            int y = f * tablero.tamCel;
+
+            if (tablero.celulas[pos(f, c)]) {
+                al_draw_filled_rectangle(
+                    x + 1, y + 1,
+                    x + tablero.tamCel - 1, y + tablero.tamCel - 1,
+                    al_map_rgb(0, 200, 0)
+                );
             }
-            al_draw_rectangle(x1, y1, x1 + cellSize, y1 + cellSize, al_map_rgb(45, 45, 45), 1);
+
+            al_draw_rectangle(
+                x, y,
+                x + tablero.tamCel, y + tablero.tamCel,
+                al_map_rgb(45, 45, 45), 1
+            );
         }
     }
-    al_draw_filled_rectangle(0, HUD_H, SCREEN_W, SCREEN_H, al_map_rgb(25, 25, 25));
-    al_draw_line(0, HUD_H, SCREEN_W, HUD_H, al_map_rgb(100, 100, 100), 2);
-    char texto_gen[50];
-    char texto_vivas[50];
-    std::snprintf(texto_gen, sizeof(texto_gen), "Generacion: %d", generaciones);
-    std::snprintf(texto_vivas, sizeof(texto_vivas), "Celulas Vivas: %d", contarCelulasVivas());
-    al_draw_text(font, al_map_rgb(255, 255, 255), 20, HUD_H + 20, ALLEGRO_ALIGN_LEFT, texto_gen);
-    al_draw_text(font, al_map_rgb(255, 255, 255), 220, HUD_H + 20, ALLEGRO_ALIGN_LEFT, texto_vivas);
+
+    //barra gris de abajo
+    al_draw_filled_rectangle(0, BARRA_Y, ANCHO, ALTO, al_map_rgb(25, 25, 25));
+    al_draw_line(0, BARRA_Y, ANCHO, BARRA_Y, al_map_rgb(100, 100, 100), 2);
+
+    char gen[50], vivas[50];
+    snprintf(gen, sizeof(gen), "Generacion: %d", tablero.gen);
+    snprintf(vivas, sizeof(vivas), "Vivas: %d", totalVivas());
+
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), 20, BARRA_Y + 20,
+                 ALLEGRO_ALIGN_LEFT, gen);
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), 180, BARRA_Y + 20,
+                 ALLEGRO_ALIGN_LEFT, vivas);
+
     if (pausa) {
-        al_draw_text(font, al_map_rgb(230, 50, 50), 410, HUD_H + 20, ALLEGRO_ALIGN_LEFT, "[ PAUSA - Espacio/Enter ]");
-        al_draw_text(font, al_map_rgb(200, 200, 50), 410, HUD_H + 40, ALLEGRO_ALIGN_LEFT, "Presiona [ S ] para guardar el patron");
+        al_draw_text(fuente, al_map_rgb(230, 50, 50), 310, BARRA_Y + 20,
+                     ALLEGRO_ALIGN_LEFT, "[ PAUSA ]");
+        al_draw_text(fuente, al_map_rgb(200, 200, 50), 410, BARRA_Y + 20,
+                     ALLEGRO_ALIGN_LEFT, "[ S ] Guardar");
     } else {
-        al_draw_text(font, al_map_rgb(50, 200, 50), 410, HUD_H + 20, ALLEGRO_ALIGN_LEFT, "[ CORRIENDO ]");
+        al_draw_text(fuente, al_map_rgb(50, 200, 50), 310, BARRA_Y + 20,
+                     ALLEGRO_ALIGN_LEFT, "[ CORRIENDO ]");
     }
-    al_draw_text(font, al_map_rgb(200, 200, 50), 410, HUD_H + 50, ALLEGRO_ALIGN_LEFT, "Presiona [ D ] para vaciar el mapa");
-    if (lastMessage[0] != '\0') {
-        al_draw_text(font, al_map_rgb(180, 180, 180), 20, HUD_H + 45, ALLEGRO_ALIGN_LEFT, lastMessage);
+
+    al_draw_text(fuente, al_map_rgb(200, 200, 50), 410, BARRA_Y + 45,
+                 ALLEGRO_ALIGN_LEFT, "[ D ] Vaciar");
+
+    if (mensaje[0] != '\0') {
+        al_draw_text(fuente, al_map_rgb(180, 180, 180), 20, BARRA_Y + 45,
+                     ALLEGRO_ALIGN_LEFT, mensaje);
     }
-    al_draw_filled_rectangle(520, HUD_H + 15, 640, HUD_H + 45, al_map_rgb(40, 90, 170));
-    al_draw_rectangle(520, HUD_H + 15, 640, HUD_H + 45, al_map_rgb(80, 160, 240), 2);
-    al_draw_text(font, al_map_rgb(255, 255, 255), 580, HUD_H + 23, ALLEGRO_ALIGN_CENTER, "Menu (C)");
-    al_draw_filled_rectangle(660, HUD_H + 15, 780, HUD_H + 45, al_map_rgb(120, 20, 20));
-    al_draw_rectangle(660, HUD_H + 15, 780, HUD_H + 45, al_map_rgb(230, 50, 50), 2);
-    al_draw_text(font, al_map_rgb(255, 255, 255), 720, HUD_H + 23, ALLEGRO_ALIGN_CENTER, "Salir (ESC)");
+
+    //boton de menu
+    al_draw_filled_rectangle(520, BARRA_Y + 15, 640, BARRA_Y + 45,
+                             al_map_rgb(40, 90, 170));
+    al_draw_rectangle(520, BARRA_Y + 15, 640, BARRA_Y + 45,
+                      al_map_rgb(80, 160, 240), 2);
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), 580, BARRA_Y + 23,
+                 ALLEGRO_ALIGN_CENTER, "Menu");
+
+    //boton para cerrar
+    al_draw_filled_rectangle(660, BARRA_Y + 15, 780, BARRA_Y + 45,
+                             al_map_rgb(120, 20, 20));
+    al_draw_rectangle(660, BARRA_Y + 15, 780, BARRA_Y + 45,
+                      al_map_rgb(230, 50, 50), 2);
+    al_draw_text(fuente, al_map_rgb(255, 255, 255), 720, BARRA_Y + 23,
+                 ALLEGRO_ALIGN_CENTER, "Salir");
 }

@@ -3,38 +3,68 @@
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_font.h>
 
-const int SCREEN_W = 900;
-const int GAME_H = 600;
-const int HUD_H = 600;
-const int SCREEN_H = 660; // 60 píxeles extra para la barra de datos inferior
-const int MIN_CELL_SIZE = 3;
-const int MAX_CELL_SIZE = 20;
-extern int cellSize;
-extern int COLS;
-extern int ROWS;
-const int MAX_ROWS = GAME_H / MIN_CELL_SIZE;
-const int MAX_COLS = SCREEN_W / MIN_CELL_SIZE;
+//medidas de la pantalla
+const int ANCHO = 900;
+const int ALTO_JUEGO = 600;
+const int BARRA_Y = 600;
+const int ALTO = 660;
 
-enum EstadoSistema { MENU, JUEGO, CARGAR };
-extern EstadoSistema estado_actual;
+//tamano maximo y minimo de las celdas
+const int CEL_MIN = 3;
+const int CEL_MAX = 20;
 
-extern bool cells[MAX_ROWS][MAX_COLS];
-extern bool next_cells[MAX_ROWS][MAX_COLS];
-extern int generaciones;
-const int MAX_SAVE_FILES = 10;
-extern char saveFiles[MAX_SAVE_FILES][64];
-extern int saveFileCount;
-extern char lastMessage[128];
+// aximo de archivos que se pueden guardar/cargar
+const int MAX_GUARDADOS = 9;
 
-void updateGridDimensions();
-int countNeighbors(int row, int col);
-int contarCelulasVivas();
-void updateGame();
-void inicializarTablero(bool aleatorio);
-void limpiarTablero();
+//estados en los que puede estar el programa
+enum ModoJuego {
+    MENU,
+    JUEGO,
+    CARGAR
+};
+
+//estructura del tablero
+struct Tablero {
+    int tamCel;    
+    int filas;    
+    int cols;      
+    int gen;  
+
+    unsigned char* celulas;    //estado actual de las celdas (1 vivo, 0 muerto)
+    unsigned char* siguiente;  //buffer para la siguiente generacion
+};
+
+//Variables globales, sabemos que en teoria hay que evitarlas
+//pero para este proyecto lo hicimos asi porque de otra forma no pudimos
+extern Tablero tablero;
+extern ModoJuego estado;
+
+extern char listaGuardados[MAX_GUARDADOS][64];
+extern int cantGuardados;
+extern char mensaje[128];
+
+//pasa las coordenadas de cada fila y columna a la posicion del arreglo de celdas
+inline int pos(int f, int c) {
+    return f * tablero.cols + c;
+}
+
+//funciones del juego
+bool inicializarTablero(int tamCel);
+void liberarTablero();
+void prepararTablero(bool azar);
+void vaciarTablero();
+
+//logica del juego
+int vecinosVivos(int f, int c);
+int totalVivas();
+void actualizar();
+
+//guardado y carga de mapas
 bool cargarListaGuardados();
-bool guardarPatronActual();
-bool cargarPatron(const char* fileName);
-void drawMenu(ALLEGRO_FONT* font);
-void drawLoadMenu(ALLEGRO_FONT* font);
-void drawGrid(ALLEGRO_FONT* font, bool pausa);
+bool guardarMapaActual();
+bool cargarMapa(const char* nombre);
+
+//dibujado de las distintas pantallas
+void dibujarMenu(ALLEGRO_FONT* fuente);
+void dibujarCarga(ALLEGRO_FONT* fuente);
+void dibujarTablero(ALLEGRO_FONT* fuente, bool pausa);

@@ -1,204 +1,203 @@
-﻿#include <allegro5/allegro.h> 
+﻿#include <allegro5/allegro.h>
 #include <allegro5/allegro_primitives.h>
 #include <allegro5/allegro_font.h>
-#include <allegro5/allegro_ttf.h>
-#include <cstdlib> 
+
+#include <cstdlib>
 #include <ctime>
-#include "game.h" //funciones definidas
+
+#include "game.h"
+
+using namespace std;
+
+//esta funcion se llama al hacer click o al arrastrar, pinta la celda correspondiente
+void pintar_celda(int x, int y) {
+    // convertir coordenadas de pantalla a indices del tablero
+    int c = x / tablero.tamCel;
+    int f = y / tablero.tamCel;
+
+    //checamos que no nos pasemos de los limites
+    if (f >= 0 && f < tablero.filas && c >= 0 && c < tablero.cols) {
+        tablero.celulas[pos(f, c)] = 1;
+    }
+}
 
 int main() {
+    //montamos todo el entorno de allegro, si algo falla cerramos
     if (!al_init()) return -1;
     if (!al_init_primitives_addon()) return -1;
     if (!al_install_mouse()) return -1;
     if (!al_install_keyboard()) return -1;
 
     al_init_font_addon();
-    if (!al_init_ttf_addon()) return -1;
 
-    ALLEGRO_DISPLAY* display = al_create_display(SCREEN_W, SCREEN_H);
-    if (!display) return -1;
+    //creamos ventana, fuente, reloj y cola de eventos
+    ALLEGRO_DISPLAY* ventana = al_create_display(ANCHO, ALTO);
+    ALLEGRO_FONT* fuente = al_create_builtin_font();
+    ALLEGRO_TIMER* reloj = al_create_timer(1.0 / 10.0);
+    ALLEGRO_EVENT_QUEUE* cola = al_create_event_queue();
 
-    ALLEGRO_FONT* font = al_create_builtin_font();
-    if (!font) {
-        al_destroy_display(display);
+    //si algo no se pudo crear, salimos con error
+    if (!ventana || !fuente || !reloj || !cola || !inicializarTablero(tablero.tamCel)) {
         return -1;
     }
 
-    ALLEGRO_TIMER* timer = al_create_timer(1.0 / 10.0);
-    ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
-    if (!timer || !queue) {
-        if (timer) al_destroy_timer(timer);
-        al_destroy_font(font);
-        al_destroy_display(display);
-        return -1;
-    }
+    //registramos las fuentes de eventos para cada cosa
+    al_register_event_source(cola, al_get_display_event_source(ventana));
+    al_register_event_source(cola, al_get_timer_event_source(reloj));
+    al_register_event_source(cola, al_get_mouse_event_source());
+    al_register_event_source(cola, al_get_keyboard_event_source());
 
-    al_register_event_source(queue, al_get_display_event_source(display));
-    al_register_event_source(queue, al_get_timer_event_source(timer));
-    al_register_event_source(queue, al_get_mouse_event_source());
-    al_register_event_source(queue, al_get_keyboard_event_source());
+    srand((unsigned int) time(NULL));
 
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    //cargamos la lista de mapas que haya guardados
     cargarListaGuardados();
 
-    al_start_timer(timer);
-    bool running = true;
-    bool redraw = true;
+    bool activo = true;
+    bool redibujar= true;
     bool pausa = false;
 
-    while (running) {
-        ALLEGRO_EVENT event;
-        al_wait_for_event(queue, &event);
+    al_start_timer(reloj);
 
-        if (event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
-            running = false;
+    //loop principal, se queda hasta que cierren
+    while (activo) {
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(cola, &ev);
+
+        //cerrar con la X de la ventana
+        if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            activo = false;
         }
-        else if (event.type == ALLEGRO_EVENT_KEY_CHAR) {
-            if (event.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
-                running = false;
-            }
+        //teclas
+        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            int tecla = ev.keyboard.keycode;
 
-            if (estado_actual == MENU) {
-                char tecla = static_cast<char>(event.keyboard.unichar);
-                if (tecla == 'v' || tecla == 'V') {
-                    inicializarTablero(false);
-                    pausa = true;
-                    estado_actual = JUEGO;
-                    redraw = true;
-                }
-                else if (tecla == 'a' || tecla == 'A') {
-                    inicializarTablero(true);
-                    pausa = false;
-                    estado_actual = JUEGO;
-                    redraw = true;
-                }
-                else if (tecla == 'l' || tecla == 'L') {
-                    cargarListaGuardados();
-                    estado_actual = CARGAR;
-                    redraw = true;
-                }
+            //escape para salir en cualquier momento
+            if (tecla == ALLEGRO_KEY_ESCAPE) {
+                activo = false;
             }
-            else if (estado_actual == JUEGO) {
-                if (event.keyboard.keycode == ALLEGRO_KEY_SPACE || event.keyboard.keycode == ALLEGRO_KEY_ENTER) {
+            //controles del menu principal
+            else if (estado == MENU) {
+                if (tecla == ALLEGRO_KEY_V) {
+                    prepararTablero(false);
+                    pausa = true;
+                    estado = JUEGO;
+                }
+                else if (tecla == ALLEGRO_KEY_A) {
+                    prepararTablero(true);
+                    pausa = false;
+                    estado = JUEGO;
+                }
+                else if (tecla == ALLEGRO_KEY_L) {
+                    cargarListaGuardados();
+                    estado = CARGAR;
+                }
+                //agrandar el tamano de las celdas
+                else if ((tecla == ALLEGRO_KEY_UP ||
+                          tecla == ALLEGRO_KEY_EQUALS ||
+                          tecla == ALLEGRO_KEY_PAD_PLUS) &&
+                         tablero.tamCel < CEL_MAX) {
+                    inicializarTablero(tablero.tamCel + 1);
+                }
+                //achicar el tamano de las celdas
+                else if ((tecla == ALLEGRO_KEY_DOWN ||
+                          tecla == ALLEGRO_KEY_MINUS ||
+                          tecla == ALLEGRO_KEY_PAD_MINUS) &&
+                         tablero.tamCel > CEL_MIN) {
+                    inicializarTablero(tablero.tamCel - 1);
+                }
+                redibujar = true;
+            }
+            //controles durante el juego
+            else if (estado == JUEGO) {
+                if (tecla == ALLEGRO_KEY_SPACE || tecla == ALLEGRO_KEY_ENTER) {
                     pausa = !pausa;
                 }
-                else if ((event.keyboard.keycode == ALLEGRO_KEY_S) && pausa) {
-                    guardarPatronActual();
-                    redraw = true;
+                else if (tecla == ALLEGRO_KEY_S && pausa) {
+                    guardarMapaActual();
                 }
-                else if (event.keyboard.keycode == ALLEGRO_KEY_D) {
-                    limpiarTablero();
-                    redraw = true;
+                else if (tecla == ALLEGRO_KEY_D) {
+                    vaciarTablero();
                 }
-                else if (event.keyboard.keycode == ALLEGRO_KEY_C) {
-                    estado_actual = MENU;
-                    redraw = true;
+                else if (tecla == ALLEGRO_KEY_C) {
+                    estado = MENU;
                 }
+                redibujar = true;
             }
-            else if (estado_actual == CARGAR) {
-                char tecla = static_cast<char>(event.keyboard.unichar);
-                if (tecla == 'b' || tecla == 'B') {
-                    estado_actual = MENU;
-                    redraw = true;
-                } else if (tecla >= '1' && tecla <= '9') {
-                    int index = tecla - '1';
-                    if (index < saveFileCount) {
-                        cargarPatron(saveFiles[index]);
+            //controles del menu de carga
+            else if (estado == CARGAR) {
+                if (tecla == ALLEGRO_KEY_B) {
+                    estado = MENU;
+                }
+                else if (tecla >= ALLEGRO_KEY_1 && tecla <= ALLEGRO_KEY_9) {
+                    int i = tecla - ALLEGRO_KEY_1;
+                    if (i < cantGuardados && cargarMapa(listaGuardados[i])) {
                         pausa = true;
-                        estado_actual = JUEGO;
-                        redraw = true;
+                        estado = JUEGO;
                     }
                 }
+                redibujar = true;
             }
         }
-        else if (event.type == ALLEGRO_EVENT_KEY_DOWN) {
-            if (estado_actual == MENU) {
-                if ((event.keyboard.keycode == ALLEGRO_KEY_PAD_PLUS || event.keyboard.keycode == ALLEGRO_KEY_EQUALS)
-                    && cellSize < MAX_CELL_SIZE) {
-                    cellSize++;
-                    updateGridDimensions();
-                    redraw = true;
-                } else if ((event.keyboard.keycode == ALLEGRO_KEY_MINUS || event.keyboard.keycode == ALLEGRO_KEY_PAD_MINUS)
-                    && cellSize > MIN_CELL_SIZE) {
-                    cellSize--;
-                    updateGridDimensions();
-                    redraw = true;
-                } else if (event.keyboard.keycode == ALLEGRO_KEY_UP && cellSize < MAX_CELL_SIZE) {
-                    cellSize++;
-                    updateGridDimensions();
-                    redraw = true;
-                } else if (event.keyboard.keycode == ALLEGRO_KEY_DOWN && cellSize > MIN_CELL_SIZE) {
-                    cellSize--;
-                    updateGridDimensions();
-                    redraw = true;
-                }
+        //ticks del reloj, si no esta pausado el juego avanza
+        else if (ev.type == ALLEGRO_EVENT_TIMER) {
+            if (estado == JUEGO && !pausa) {
+                actualizar();
             }
+            redibujar = true;
         }
-        else if (event.type == ALLEGRO_EVENT_TIMER) {
-            if (estado_actual == JUEGO && !pausa) {
-                updateGame();
-            }
-            redraw = true;
-        }
-        else if (event.type == ALLEGRO_EVENT_MOUSE_BUTTON_DOWN) {
-            if (estado_actual == JUEGO) {
-                ALLEGRO_MOUSE_STATE mouse_state;
-                al_get_mouse_state(&mouse_state);
+        //click del mouse
+        else if (ev.type == ALLEGRO_EVENT_MOUSE_BUTTON_DOWN) {
+            if (estado == JUEGO && ev.mouse.button == 1) {
+                int x = ev.mouse.x;
+                int y = ev.mouse.y;
 
-                if (mouse_state.buttons & 1) {
-                    int mx = mouse_state.x;
-                    int my = mouse_state.y;
-
-                    if (mx >= 520 && mx <= 640 && my >= (HUD_H + 15) && my <= (HUD_H + 45)) {
-                        estado_actual = MENU;
-                        redraw = true;
-                    }
-                    else if (mx >= 660 && mx <= 780 && my >= (HUD_H + 15) && my <= (HUD_H + 45)) {
-                        running = false;
-                    }
-                    else {
-                        int col = mx / cellSize;
-                        int row = my / cellSize;
-                        if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
-                            cells[row][col] = true;
-                            redraw = true;
-                        }
-                    }
+                //estos son los botones de la barra inferior
+                if (x >= 520 && x <= 640 && y >= BARRA_Y + 15 && y <= BARRA_Y + 45) {
+                    estado = MENU;
                 }
+                else if (x >= 660 && x <= 780 && y >= BARRA_Y + 15 && y <= BARRA_Y + 45) {
+                    activo = false;
+                }
+                else {
+                    pintar_celda(x, y);
+                }
+                redibujar = true;
             }
         }
-        else if (event.type == ALLEGRO_EVENT_MOUSE_AXES) {
-            if (estado_actual == JUEGO) {
-                ALLEGRO_MOUSE_STATE mouse_state;
-                al_get_mouse_state(&mouse_state);
-                if (mouse_state.buttons & 1) {
-                    int col = mouse_state.x / cellSize;
-                    int row = mouse_state.y / cellSize;
-                    if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
-                        cells[row][col] = true;
-                        redraw = true;
-                    }
+        //para poder pintar celdas arrastrando el mouse
+        else if (ev.type == ALLEGRO_EVENT_MOUSE_AXES) {
+            if (estado == JUEGO) {
+                ALLEGRO_MOUSE_STATE mouse;
+                al_get_mouse_state(&mouse);
+                if (mouse.buttons & 1) {
+                    pintar_celda(mouse.x, mouse.y);
+                    redibujar = true;
                 }
             }
         }
 
-        if (redraw && al_is_event_queue_empty(queue)) {
-            if (estado_actual == MENU) {
-                drawMenu(font);
-            } else if (estado_actual == CARGAR) {
-                drawLoadMenu(font);
-            } else if (estado_actual == JUEGO) {
-                drawGrid(font, pausa);
+        //solo redibuja si hace falta y no hay eventos pendientes
+        if (redibujar && al_is_event_queue_empty(cola)) {
+            if (estado == MENU) {
+                dibujarMenu(fuente);
+            }
+            else if (estado == CARGAR) {
+                dibujarCarga(fuente);
+            }
+            else if (estado == JUEGO) {
+                dibujarTablero(fuente, pausa);
             }
             al_flip_display();
-            redraw = false;
+            redibujar = false;
         }
     }
 
-    al_destroy_font(font);
-    al_destroy_timer(timer);
-    al_destroy_event_queue(queue);
-    al_destroy_display(display);
+    //liberamos la memoria del tablero y de allegro
+    liberarTablero();
+    al_destroy_font(fuente);
+    al_destroy_timer(reloj);
+    al_destroy_event_queue(cola);
+    al_destroy_display(ventana);
+
     return 0;
 }
-
