@@ -1,9 +1,3 @@
-guardado_01.txt
-guardado_02.txt
-guardado_03.txt
-guardado_04.txt
-guardado_05.txt
-guardado_06.txt
-guardado_07.txt
-guardado_08.txt
-guardado_09.txt
+NAVE.txt
+PLANEADOR.txt
+still_lifes.txt
