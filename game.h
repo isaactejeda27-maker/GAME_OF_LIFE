@@ -18,6 +18,7 @@ const int MAX_GUARDADOS = 9;
 
 //estados en los que puede estar el programa
 enum ModoJuego {
+ 
     MENU,
     JUEGO,
     CARGAR
@@ -25,6 +26,7 @@ enum ModoJuego {
 
 //estructura del tablero
 struct Tablero {
+    
     int tamCel;    
     int filas;    
     int cols;      
@@ -45,6 +47,7 @@ extern char mensaje[128];
 
 //pasa las coordenadas de cada fila y columna a la posicion del arreglo de celdas
 inline int pos(int f, int c) {
+    
     return f * tablero.cols + c;
 }
 
