@@ -1,9 +1,10 @@
-#pragma once
+#ifndef MI_ARCHIVO_H //evitamos que se lea asi mismo varias veces en la compilacion 
+#define MI_ARCHIVO_H
 
-#include <allegro5/allegro.h>
-#include <allegro5/allegro_font.h>
+#include <allegro5/allegro.h> //usamod las funciones de allegro
+#include <allegro5/allegro_font.h> //usamos fuentes incluidas con allegro
 
-//medidas de la pantalla
+//medidas de la pantalla cons constantes para que no se distorcione el contenido
 const int ANCHO = 900;
 const int ALTO_JUEGO = 600;
 const int BARRA_Y = 600;
@@ -16,7 +17,7 @@ const int CEL_MAX = 20;
 // aximo de archivos que se pueden guardar/cargar
 const int MAX_GUARDADOS = 9;
 
-//estados en los que puede estar el programa
+//estados en los que puede estar el programa para uso de pantallas
 enum ModoJuego {
  
     MENU,
@@ -71,3 +72,5 @@ bool cargarMapa(const char* nombre);
 void dibujarMenu(ALLEGRO_FONT* fuente);
 void dibujarCarga(ALLEGRO_FONT* fuente);
 void dibujarTablero(ALLEGRO_FONT* fuente, bool pausa);
+
+#endif

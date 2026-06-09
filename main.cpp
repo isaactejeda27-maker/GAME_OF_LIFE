@@ -18,7 +18,13 @@ void pintar_celda(int x, int y) {
     //checamos que no nos pasemos de los limites
     if (f >= 0 && f < tablero.filas && c >= 0 && c < tablero.cols) {
         
-        tablero.celulas[pos(f, c)] = !tablero.celulas[pos(f, c)];
+        if(tablero.celulas[pos(f, c)] == 1){ //si la celda esta encendida, la apagamos
+
+            tablero.celulas[pos(f, c)] = 0;
+        }else{ //caso contrario la encendemos
+
+            tablero.celulas[pos(f, c)] = 1;
+        }
     }
 }
 
@@ -61,16 +67,17 @@ int main() {
     bool redibujar= true;
     bool pausa = false;
 
+    //iniciamos el relog
     al_start_timer(reloj);
 
     //loop principal, se queda hasta que cierren
     while (activo) {
        
-        ALLEGRO_EVENT ev;
+        ALLEGRO_EVENT ev; //declaramos un evento
         al_wait_for_event(cola, &ev);
 
         //cerrar con la X de la ventana
-        if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+        if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) { //terminamos con la ejecucion 
            
             activo = false;
         }
@@ -87,29 +94,27 @@ int main() {
             //controles del menu principal
             else if (estado == MENU) {
                
-                if (tecla == ALLEGRO_KEY_V) {
+                if (tecla == ALLEGRO_KEY_V) { //mapa vacio e inicar pausado
                    
-                    prepararTablero(false);
+                    prepararTablero(false); 
                     pausa = true;
-                    estado = JUEGO;
+                    estado = JUEGO; //pasamos a juego
                 }
-                else if (tecla == ALLEGRO_KEY_A) {
+                else if (tecla == ALLEGRO_KEY_A) { //aletorio y sin pausa inicial
                     
                     prepararTablero(true);
-                    pausa = false;
-                    estado = JUEGO;
+                    pausa = false; 
+                    estado = JUEGO; 
                 }
-                else if (tecla == ALLEGRO_KEY_L) {
+                else if (tecla == ALLEGRO_KEY_L) { //menu de carga de mapas
+
                    
                     cargarListaGuardados();
                     estado = CARGAR;
                 }
                 //agrandar el tamano de las celdas
-                else if ((tecla == ALLEGRO_KEY_UP ||
-                          
-                    tecla == ALLEGRO_KEY_EQUALS ||
-                          tecla == ALLEGRO_KEY_PAD_PLUS) &&
-                         tablero.tamCel < CEL_MAX) {
+                else if ((tecla == ALLEGRO_KEY_UP || tecla == ALLEGRO_KEY_EQUALS || tecla == ALLEGRO_KEY_PAD_PLUS) && tablero.tamCel < CEL_MAX) {
+                   
                     inicializarTablero(tablero.tamCel + 1);
                 }
                 //achicar el tamano de las celdas
@@ -225,7 +230,7 @@ int main() {
                 dibujarTablero(fuente, pausa);
             }
             al_flip_display();
-            redibujar = false;
+            redibujar = false; //no actualizamos el tablero 
         }
     }
 
