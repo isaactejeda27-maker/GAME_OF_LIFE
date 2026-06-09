@@ -183,7 +183,7 @@ bool cargarListaGuardados() {
     FILE* arch = fopen("saved_maps_list.txt", "r"); //abrir el archivo
     if (!arch) {
 
-        std::cerr << "No se pudo abrir el archivo" << endl;
+        cerr << "No se pudo abrir el archivo" << endl;
         return false;
     }
 

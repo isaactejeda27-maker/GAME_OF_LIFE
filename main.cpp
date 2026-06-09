@@ -32,7 +32,7 @@ int main() {
     //montamos todo el entorno de allegro, si algo falla cerramos
     if (!al_init() || !al_init_primitives_addon() || !al_install_mouse() || !al_install_keyboard()){ 
         
-        std::cerr << "Error al iniciar allegro" << endl;
+        cerr << "Error al iniciar allegro" << endl;
         return -1;
     }
    
@@ -48,7 +48,7 @@ int main() {
     //si algo no se pudo crear, salimos con error
     if (!ventana || !fuente || !reloj || !cola || !inicializarTablero(tablero.tamCel)) {
        
-        std::cerr << "No se pudo ejecutar una funcion en la cola de eventos" << endl;
+        cerr << "No se pudo ejecutar una funcion en la cola de eventos" << endl;
         return -1;
     }
 
